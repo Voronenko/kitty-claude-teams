@@ -26,8 +26,18 @@ export KITTY_TMUX_SHIM_ORIG_PATH
 
 export PATH="${KITTY_TMUX_SHIM_DIR}/bin:${PATH}"
 
-export TMUX="kitty-shim:/tmp/kitty-shim,$$,0"
-export TMUX_PANE="%0"
+if ! command -v jq >/dev/null 2>&1; then
+    if ! command -v python3 >/dev/null 2>&1; then
+        echo "kitty-tmux-shim: WARNING: neither jq nor python3 found, JSON parsing may fail" >&2
+    fi
+fi
+
+# Only set TMUX env vars if not already set by kitty.conf
+# This enables hybrid activation: env vars from kitty.conf, PATH from shell
+if [ -z "${TMUX:-}" ] || [ -z "${TMUX_PANE:-}" ]; then
+    export TMUX="kitty-shim:/tmp/kitty-shim,$$,0"
+    export TMUX_PANE="%0"
+fi
 
 export KITTY_TMUX_SHIM_DIR
 export KITTY_TMUX_SHIM_STATE

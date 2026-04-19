@@ -48,6 +48,30 @@ allow_remote_control yes
 enabled_layouts splits
 ```
 
+Or include provided config:
+
+```conf
+include /path/to/kitty-tmux-wrapper/extras/kitty-shim.conf
+```
+
+**Hybrid activation (recommended):**
+
+The `kitty-shim.conf` file includes these env vars:
+
+```conf
+env TMUX=kitty-shim:/tmp/kitty-shim,$$,0
+env TMUX_PANE=%0
+```
+
+This sets the fake tmux environment **automatically** when Kitty starts. Combined with manual PATH setup in your shell, this reduces configuration to just:
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc:
+export PATH="${XDG_DATA_HOME:-$HOME/.local/share}/kitty-tmux-shim/bin:$PATH"
+```
+
+When both kitty.conf and shell PATH are set correctly, the shim activates automatically without sourcing `activate.sh`. This is the simplest setup for everyday use.
+
 Or include the provided config:
 
 ```conf
@@ -55,6 +79,24 @@ include /path/to/kitty-tmux-wrapper/extras/kitty-shim.conf
 ```
 
 ### Shell Activation
+
+**Hybrid activation (recommended):** Minimal setup with kitty.conf env vars + shell PATH:
+
+1. **Step 1: Add to `~/.config/kitty/kitty.conf`** (or include the config):
+   ```conf
+   include /path/to/kitty-tmux-wrapper/extras/kitty-shim.conf
+   ```
+
+2. **Step 2: Add to `~/.bashrc`** or `~/.zshrc`**:
+   ```bash
+   export PATH="${XDG_DATA_HOME:-$HOME/.local/share}/kitty-tmux-shim/bin:$PATH"
+   ```
+
+3. **Step 3: Restart Kitty**
+
+That's it! The shim activates automatically when you start Kitty, with no need to source `activate.sh`.
+
+**Traditional activation (full shell config):** If kitty.conf is not configured or you prefer full control:
 
 Add **one** of these to your shell config:
 
