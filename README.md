@@ -120,6 +120,35 @@ fi
 
 Then restart your shell inside Kitty.
 
+## Real life integration within dotfiles
+
+This project actually evolved from mine dotfiles
+
+zshrc:
+
+```sh
+# kitty-tmux-shim: Hybrid activation (env vars from kitty.conf, PATH + state init here)
+if [[ -n "${KITTY_WINDOW_ID:-}" ]]; then
+    export PATH="$HOME/dotfiles/config/kitty/kitty-tmux-shim/bin:$PATH"
+
+    # Use KITTY_WINDOW_ID to isolate different kitty instances
+    _shim_root="${XDG_RUNTIME_DIR:-${TMPDIR:-/tmp}}/kitty-tmux-shim-$(id -u)"
+    export KITTY_TMUX_SHIM_STATE="$_shim_root/window-${KITTY_WINDOW_ID}"
+    unset _shim_root
+
+    mkdir -p "$KITTY_TMUX_SHIM_STATE"
+    [[ ! -f "$KITTY_TMUX_SHIM_STATE/next_id" ]] && echo "1" > "$KITTY_TMUX_SHIM_STATE/next_id"
+    # Initialize sessions file with default "main" session
+    if [[ ! -f "$KITTY_TMUX_SHIM_STATE/sessions" ]]; then
+        echo "main" > "$KITTY_TMUX_SHIM_STATE/sessions"
+    fi
+fi
+```
+
+and portion of kitty tmux shim under:  https://github.com/Voronenko/dotfiles/tree/master/config/kitty
+
+How it works in mine dotfiles: https://github.com/Voronenko/dotfiles/blob/master/config/kitty/README.tmux-shim.md
+
 ## Usage
 
 Once activated, just use Claude Code normally inside Kitty:
