@@ -180,7 +180,7 @@ bash install.sh --uninstall
 |---|---|---|
 | `KITTY_TMUX_SHIM_DEBUG` | unset | Set to `1` to log all tmux calls to `$STATE_DIR/shim.log` |
 
-## How It Works
+## How It Works TLDR
 
 The shim uses Kitty's **remote control protocol** (`kitten @` commands):
 
@@ -215,6 +215,151 @@ sequenceDiagram
     Shim->>Kitty: kitten @ close-window
     Shim->>Shim: clean up state files
 ```
+
+
+## Architecture Overview (diagrams)
+
+### High-Level Flow
+
+```mermaid
+flowchart LR
+    CC[Claude Code] -->|tmux split-window| KS[kitty-tmux-shim]
+    CC -->|tmux send-keys| KS
+    KS -->|kitten @ launch| KW[Kitty Window]
+    KS -->|kitten @ send-text| KW
+    KS -->|kitten @ close-window| KW
+    KS -->|kitten @ set-window-title| KW
+    KW --> WRP[kitty-window-wrapper]
+```
+
+### Window Creation Flow
+
+```mermaid
+sequenceDiagram
+    participant CC as Claude Code
+    participant Shim as kitty-tmux-shim
+    participant Kitty as Kitty
+    participant Wrapper as kitty-window-wrapper
+
+    CC->>Shim: tmux split-window -h -l 70% -P -F '#{pane_id}'
+    Shim->>Shim: alloc_pane_id() → %1
+    Shim->>Kitty: kitten @ launch --no-response --type=window --location=hsplit --allow-remote-control
+    Note over Kitty: Creates new OS window
+    Kitty->>Wrapper: Launch in new window
+    Wrapper->>Wrapper: Set KITTY_WINDOW_ID env var
+    Wrapper->>Shim: Write .kitty_id → "6"
+    Wrapper->>Shim: Touch .ready
+    Shim->>Shim: Wait for .ready, read .kitty_id
+    Shim->>CC: Return %1
+
+    CC->>Shim: tmux send-keys -t %1 "claude-agent ... --agent-name researcher Enter"
+    Shim->>Shim: Write command to .fifo
+    Wrapper->>Wrapper: Read command from .fifo
+    Wrapper->>Shim: Parse --agent-name, write .agent_name
+    Wrapper->>Shim: Touch .named
+    Wrapper->>Wrapper: exec claude-agent command
+    Shim->>Shim: Wait for .named, read .agent_name
+    Shim->>Kitty: kitten @ --no-response set-window-title --match=id:6 "researcher"
+```
+
+### State Directory Structure
+
+```mermaid
+graph TD
+    Root["/run/user/1000/kitty-tmux-shim-1000/"]
+    Root --> W1["window-1/"]
+    Root --> W2["window-2/"]
+    Root --> W3["window-3/"]
+
+    W1 --> P1["%1.pid"]
+    W1 --> K1["%1.kitty_id"]
+    W1 --> F1["%1.fifo"]
+    W1 --> R1["%1.ready"]
+    W1 --> N1["%1.named"]
+    W1 --> A1["%1.agent_name"]
+
+    style Root fill:#f9f,stroke:#333,stroke-width:2px
+    style W1 fill:#bbf,stroke:#333,stroke-width:1px
+    style W2 fill:#bbf,stroke:#333,stroke-width:1px
+    style W3 fill:#bbf,stroke:#333,stroke-width:1px
+```
+
+### Component Architecture
+
+```mermaid
+graph TB
+    subgraph "Claude Code"
+        T1[TmuxBackend.ts]
+        AG[Agent Spawner]
+    end
+
+    subgraph "kitty-tmux-shim"
+        TMUX[bin/tmux]
+        WRAP[bin/kitty-window-wrapper]
+    end
+
+    subgraph "Kitty Terminal"
+        KW1[Window 1: Leader]
+        KW2[Window 2: Agent]
+        KW3[Window 3: Agent]
+    end
+
+    subgraph "State Directory"
+        FIFO[.fifo files]
+        LOCK[next_id.lock]
+        LOG[shim.log]
+    end
+
+    AG -->|tmux commands| TMUX
+    TMUX -->|launch| WRAP
+    TMUX -->|read/write| FIFO
+    TMUX -->|acquire| LOCK
+    TMUX -->|logging| LOG
+
+    WRAP -->|spawned in| KW2
+    WRAP -->|spawned in| KW3
+
+    style T1 fill:#bfb,stroke:#333
+    style TMUX fill:#bbf,stroke:#333
+    style WRAP fill:#bbf,stroke:#333
+    style KW1 fill:#fbb,stroke:#333
+    style KW2 fill:#fbb,stroke:#333
+    style KW3 fill:#fbb,stroke:#333
+```
+
+### Parallel Spawn Protection
+
+```mermaid
+sequenceDiagram
+    participant CC as Claude Code
+    participant L1 as Shim (Pane 1)
+    participant L2 as Lock (next_id.lock)
+    participant K1 as Kitty (Window 1)
+    participant L3 as Shim (Pane 3)
+
+    CC->>L1: tmux split-window (agent1)
+    L1->>L2: mkdir next_id.lock (acquire)
+    L1->>L1: Read next_id → "1"
+    L1->>L1: Increment next_id → "2"
+    L1->>L2: Release lock
+    L1->>K1: kitten @ launch (wrapper for %1)
+    K1->>L1: Return window ID
+
+    Note over L1,L3: Parallel request for agent2
+
+    CC->>L3: tmux split-window (agent2)
+    L3->>L2: mkdir next_id.lock (wait for L1)
+    L1->>L2: Release lock
+    L3->>L2: mkdir next_id.lock (acquire)
+    L3->>L3: Read next_id → "2"
+    L3->>L3: Increment next_id → "3"
+    L3->>L2: Release lock
+    L3->>K1: kitten @ launch (wrapper for %2)
+    K1->>L3: Return window ID
+
+    Note over CC,K1: Result: %1 and %2 created with unique IDs
+```
+
 
 ### Environment Forwarding
 
